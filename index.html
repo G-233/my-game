@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#080c17">
+  <title>霓虹五子乱斗 — B站 Toy</title>
+  <link rel="stylesheet" href="./style.css">
+  <!-- Files: style.css (visuals), game-config.js (constants/items), game-state.js (state), pattern-system.js (patterns), inventory-system.js (loot/effects), audio-synth.js (Web Audio), game.js (loop/input/render). Load order is dependency order; classic scripts keep file:// double-click support. -->
+  <script src="./game-config.js" defer></script>
+  <script src="./game-state.js" defer></script>
+  <script src="./pattern-system.js" defer></script>
+  <script src="./inventory-system.js" defer></script>
+  <script src="./audio-synth.js" defer></script>
+  <script src="./game.js" defer></script>
+</head>
+<body>
+  <main class="game-shell">
+    <canvas id="gameCanvas" aria-label="40 乘 40 的实时对战棋盘">当前浏览器不支持 Canvas。</canvas>
+    <div class="arena-vignette" aria-hidden="true"></div>
+    <div class="scanlines" aria-hidden="true"></div>
+
+    <header class="hud top-hud">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">五</div>
+        <div>
+          <p class="eyebrow">B站 Toy · 即时沙盒</p>
+          <h1>霓虹五子乱斗</h1>
+        </div>
+      </div>
+
+      <section class="match-panel glass-panel" aria-label="对局进度">
+        <div class="match-heading">
+          <span class="live-indicator"><i></i> LIVE</span>
+          <strong id="modeLabel">经典模式</strong>
+          <span class="match-time" id="matchTime">02:45</span>
+        </div>
+        <div class="match-progress"><span id="matchProgress"></span></div>
+        <p class="match-message" id="matchMessage">任意一方占比达到 80% 可提前结算</p>
+      </section>
+
+      <div class="top-actions">
+        <div class="mode-switch glass-panel" aria-label="游戏模式">
+          <button class="mode-button is-active" data-mode="classic" type="button" aria-pressed="true">经典</button>
+          <button class="mode-button" data-mode="infinite" type="button" aria-pressed="false">无限</button>
+          <button class="mode-button" data-mode="practice" type="button" aria-pressed="false">练习</button>
+        </div>
+        <label class="difficulty-picker glass-panel">
+          <span>AI</span>
+          <select id="aiDifficulty" aria-label="AI 难度">
+            <option value="easy">简单</option>
+            <option value="normal" selected>普通</option>
+            <option value="hard">困难</option>
+            <option value="hell">地狱</option>
+          </select>
+        </label>
+        <button class="icon-button glass-panel" id="audioToggle" type="button" aria-label="关闭音效" title="音效开关">音</button>
+        <button class="icon-button glass-panel" id="leaderboardButton" type="button" aria-label="排行榜" title="排行榜">榜</button>
+        <button class="icon-button glass-panel" id="achievementButton" type="button" aria-label="成就" title="成就">成</button>
+      </div>
+    </header>
+
+    <aside class="hud left-hud glass-panel" aria-label="双方状态">
+      <div class="player-card player-blue">
+        <div class="player-row"><span class="player-label"><i class="player-dot"></i>蓝方</span><strong id="blueArea">0%</strong></div>
+        <div class="energy-track"><div class="energy-fill" id="blueEnergyFill"></div></div>
+        <div class="player-meta"><span>能量 <b id="blueEnergyText">0</b></span><span id="blueStones">0 子</span></div>
+        <div class="health-track" id="blueHealthTrack" hidden><div class="health-fill"></div></div>
+      </div>
+      <div class="player-card player-red">
+        <div class="player-row"><span class="player-label"><i class="player-dot"></i>红方 · AI</span><strong id="redArea">0%</strong></div>
+        <div class="energy-track"><div class="energy-fill" id="redEnergyFill"></div></div>
+        <div class="player-meta"><span>能量 <b id="redEnergyText">0</b></span><span id="redStones">0 子</span></div>
+        <div class="health-track" id="redHealthTrack" hidden><div class="health-fill"></div></div>
+      </div>
+      <div class="area-compare">
+        <div class="area-compare-label"><span>蓝方</span><span>有效棋子占比</span><span>红方</span></div>
+        <div class="area-compare-track"><span id="blueAreaCompare"></span><span id="redAreaCompare"></span></div>
+      </div>
+    </aside>
+
+    <div class="hud right-status">
+      <div class="status-pill glass-panel"><i class="status-pip"></i><span id="statusText">能量充能中 · 点击空位落子</span></div>
+      <div class="survival-panel glass-panel" id="survivalPanel" hidden>
+        <span class="survival-title">无限模式 · 生存压力</span>
+        <span id="survivalText">AI 普通 · 间隔 −0% · 回能 6.0/s</span>
+        <span class="survival-health" id="healthText">血量 100</span>
+      </div>
+      <div class="board-hint glass-panel"><kbd>拖拽</kbd>移动 <kbd>滚轮</kbd>缩放</div>
+    </div>
+
+    <div class="hud bomb-preview-label" id="bombPreviewLabel" hidden>爆炸范围 3 × 3</div>
+    <div class="hud toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="portrait-notice" aria-live="polite">请横屏游玩</div>
+
+    <aside class="hud practice-panel glass-panel" id="practicePanel" aria-label="练习模式调参面板" hidden>
+      <div class="practice-panel-heading">
+        <div>
+          <strong>沙盒调参</strong>
+          <p>练习模式，数据不计入正式记录</p>
+        </div>
+        <button class="practice-action" id="practiceRestart" type="button">重开本局</button>
+      </div>
+      <details open>
+        <summary>A. 能量与落子</summary>
+        <label class="practice-control"><span>能量回复 / 秒</span><input data-practice-key="regenRate" data-unit="" type="range" min="0" max="30" step="0.5"><output></output></label>
+        <label class="practice-control"><span>能量上限</span><input data-practice-key="energyMax" data-practice-type="integer" type="range" min="10" max="300" step="5"><output></output></label>
+        <label class="practice-control"><span>落子消耗</span><input data-practice-key="placeCost" type="range" min="0" max="80" step="1"><output></output></label>
+        <label class="practice-control"><span>道具全局冷却 / 秒</span><input data-practice-key="globalCooldown" type="range" min="0" max="10" step="0.1"><output></output></label>
+      </details>
+      <details>
+        <summary>B. 道具消耗</summary>
+        <label class="practice-control"><span>消耗递减 / 秒</span><input data-practice-key="itemCostDecrease" type="range" min="0" max="10" step="0.25"><output></output></label>
+      </details>
+      <details>
+        <summary>C. 图案</summary>
+        <label class="practice-control"><span>连线图案门槛</span><select data-practice-key="patternMinimumLineLength" data-practice-type="integer"><option value="3">3 连</option><option value="4">4 连</option><option value="5">5 连起算</option></select></label>
+        <label class="practice-control"><span>图案触发冷却 / 秒</span><input data-practice-key="patternCooldown" type="range" min="0" max="60" step="1"><output></output></label>
+        <label class="practice-control"><span>一档道具掉落概率</span><input data-practice-key="tier1DropChance" data-unit="%" type="range" min="0" max="1" step="0.05"><output></output></label>
+        <label class="practice-control"><span>二档道具掉落概率</span><input data-practice-key="tier2DropChance" data-unit="%" type="range" min="0" max="1" step="0.05"><output></output></label>
+        <label class="practice-control"><span>三档道具掉落概率</span><input data-practice-key="tier3DropChance" data-unit="%" type="range" min="0" max="1" step="0.05"><output></output></label>
+      </details>
+      <details>
+        <summary>D. 胜负与节奏</summary>
+        <label class="practice-control"><span>本局时长 / 秒</span><input data-practice-key="classicDuration" type="range" min="30" max="600" step="5"><output></output></label>
+        <label class="practice-control"><span>提前结算占比</span><input data-practice-key="areaThreshold" data-unit="%" type="range" min="0.1" max="0.9" step="0.01"><output></output></label>
+        <label class="practice-control"><span>落子动画 / 秒</span><input data-practice-key="dropDuration" type="range" min="0.1" max="2" step="0.05"><output></output></label>
+        <label class="practice-control"><span>持续效果倍率</span><input data-practice-key="effectDurationMultiplier" data-unit="×" type="range" min="0.25" max="4" step="0.05"><output></output></label>
+      </details>
+      <details open>
+        <summary>E. AI</summary>
+        <label class="practice-control"><span>AI 难度</span><select data-practice-key="aiDifficulty"><option value="off">关</option><option value="easy">简单</option><option value="normal">普通</option><option value="hard">困难</option><option value="hell">地狱</option></select></label>
+        <label class="practice-control"><span>决策间隔覆盖 / 秒</span><input data-practice-key="aiIntervalOverride" data-practice-type="optional-number" type="number" min="0.12" max="10" step="0.05" placeholder="留空使用难度默认值"></label>
+      </details>
+      <details>
+        <summary>F. 调试</summary>
+        <label class="practice-control practice-checkbox"><span>无敌（自己能量不减）</span><input data-practice-key="invincible" type="checkbox"><output></output></label>
+        <label class="practice-control practice-checkbox"><span>显示调试信息</span><input data-practice-key="debug" type="checkbox"><output></output></label>
+      </details>
+      <div class="practice-footer">
+        <button class="practice-action" id="practiceReset" type="button">恢复默认</button>
+        <button class="practice-action" id="practiceExport" type="button">导出当前参数</button>
+      </div>
+      <textarea id="practiceSnapshot" readonly aria-label="练习参数 JSON 快照" placeholder="导出的 JSON 参数会显示在这里"></textarea>
+    </aside>
+    <pre class="hud practice-debug glass-panel" id="practiceDebug" hidden></pre>
+
+    <footer class="hud inventory-panel glass-panel">
+      <div class="inventory-heading">
+        <div><span class="section-label">战利品背包</span><span class="inventory-count" id="inventoryCount">0 / 5</span></div>
+        <span class="inventory-help">选择道具后点击棋盘使用 · 落子始终可用</span>
+      </div>
+      <div class="inventory-slots" id="inventorySlots" aria-label="一次性道具背包"></div>
+    </footer>
+
+    <section class="modal-layer" id="resultModal" hidden aria-live="polite">
+      <div class="modal-card result-card glass-panel">
+        <p class="eyebrow" id="resultEyebrow">对局结算</p>
+        <h2 id="resultTitle">蓝方获胜</h2>
+        <p class="result-summary" id="resultSummary"></p>
+        <div class="score-grid" id="scoreGrid">
+          <span class="score-side" id="scoreSideLabel">本次积分</span>
+          <span>基础分 <b id="scoreBase">0</b></span>
+          <span>面积分 <b id="scoreArea">0</b></span>
+          <span>图案分 <b id="scorePattern">0</b></span>
+          <span>效率分 <b id="scoreEfficiency">0</b></span>
+          <span>被炸惩罚 <b id="scoreBombPenalty">0</b></span>
+          <span class="score-total">总分 <b id="scoreTotal">0</b></span>
+        </div>
+        <div class="practice-result-stats" id="practiceResultStats" hidden>
+          <span>练习时长 <b id="practiceResultDuration"></b></span>
+          <span>落子数 <b id="practiceResultMoves"></b></span>
+          <span>触发图案数 <b id="practiceResultPatterns"></b></span>
+          <span>使用道具数 <b id="practiceResultItems"></b></span>
+        </div>
+        <button class="primary-button" id="restartButton" type="button">再来一局 <span>↻</span></button>
+      </div>
+    </section>
+
+    <section class="modal-layer" id="placeholderModal" hidden>
+      <div class="modal-card glass-panel">
+        <button class="modal-close" id="closePlaceholder" type="button" aria-label="关闭">×</button>
+        <p class="eyebrow" id="placeholderTitle">敬请期待</p>
+        <h2>敬请期待</h2>
+        <p class="placeholder-copy">此功能尚未开放</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
