@@ -149,10 +149,6 @@ button {
   -webkit-backdrop-filter: blur(16px);
 }
 
-.portrait-notice {
-  display: none;
-}
-
 .top-hud {
   inset: calc(18px + env(safe-area-inset-top)) calc(22px + env(safe-area-inset-right)) auto calc(22px + env(safe-area-inset-left));
   display: grid;
@@ -1195,22 +1191,6 @@ kbd {
 @supports not (backdrop-filter: blur(1px)) {
   .glass-panel {
     background: rgba(12, 20, 34, .96);
-  }
-}
-
-@media (orientation: portrait) and (max-width: 900px) {
-  .portrait-notice {
-    position: fixed;
-    z-index: 30;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-    background: rgba(5, 9, 18, .97);
-    color: #adf4ff;
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: .12em;
   }
 }
 
